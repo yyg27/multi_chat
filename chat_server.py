@@ -23,6 +23,9 @@ tcp_port = 56458;
 clients = [];
 usernames = [];
 
+#for storing offline messages
+delayed_messages = {};
+
 server_stats = {
     "total_messages":0,
     "total_pms":0,
@@ -92,6 +95,16 @@ def receive(server):
             #append to server list
             clients.append(client);
             usernames.append(username);
+
+            if username in delayed_messages:
+                pending_message = delayed_messages[username];
+                client.send(f"There are {len(pending_message)} messages for you".encode('utf-8'));
+
+                for message in pending_message:
+                    client.send(message.encode('utf-8'));
+
+                del delayed_messages[username];    
+
                 
             print(f"Your username is : {username}")
             broadcast(f"[### CHAT SERVER ###] - {username} has joined the chat");
@@ -116,7 +129,7 @@ def handle(client):
                 raise Exception("Client disconnected");
             
             #check spam
-            spam,cooldown = is_spam();
+            spam,cooldown = is_spam(client);
 
             if spam:
                 client.send(f"SPAM DETECTED ! You are muted for {cooldown} seconds...".encode('utf-8'));
@@ -130,8 +143,6 @@ def handle(client):
             if message.startswith("/pm"):
                 send_pm(client,username,message);
             else:
-                if is_spam():
-                    client.send("SPAM DETECTED ")
                 #add username to message
                 message_to_broadcast = f"{username}: {message}";
                 broadcast(message_to_broadcast);
@@ -182,8 +193,19 @@ def send_pm(sender_client,sender_username,message):
         target_name = components[1];
         private_message = components[2];
 
+        #for saving messages for offline users
         if target_name not in usernames:
             sender_client.send(f"[### CHAT SERVER ###] - User {target_name} is not found".encode('utf-8'));
+            sender_client.send("Saving your message to database to send when user is online".encode('utf-8'));
+            timestamp = datetime.now().strftime('%H:%M:%S');
+            saved_message = f"[{timestamp}] [DELAYED MESSAGE] {sender_username}: {private_message}";
+
+            if target_name not in delayed_messages:
+                delayed_messages[target_name] = [];
+        
+            delayed_messages[target_name].append(saved_message);
+
+            return;
 
         timestamp = datetime.now().strftime('%H:%M:%S');
 
@@ -211,30 +233,27 @@ def tcp_chat_server():
     logging.info("[### CHAT SERVER ###] - Server starting up...");
     
     try:
-        server.bind((host, port));
-        logging.info(f"[### CHAT SERVER ###] - Server is bound to port {port}");
+        server.bind((host, tcp_port));
+        logging.info(f"[### CHAT SERVER ###] - Server is bound to port {tcp_port}");
         server.listen();
-        logging.info(f"[### CHAT SERVER ###] - Server listening on port {port}..;.");
+        logging.info(f"[### CHAT SERVER ###] - Server listening on port {tcp_port}..;.");
+
+        receive(server);
+
     except Exception as e:
         logging.error(f"[### CHAT SERVER ###] - Failed to start server: {e}");
         return
     
 
-    
-try:
-    receive();
-except KeyboardInterrupt:
-    logging.info("Server shutting down...");
-    for client in clients:
-        try:
-            client.close();
-        except:
-            pass
-    server.close();
+if __name__ == "__main__":  
+    try:
+        tcp_chat_server();
+    except KeyboardInterrupt:
+        logging.info("Server shutting down...");
+        for client in clients:
+            try:
+                client.close();
+            except:
+                pass
 
-if __name__ == "__main__":
-    tcp_chat_server();
-
-
-
-    
+        logging.info("Server is closed");
