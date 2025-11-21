@@ -38,7 +38,7 @@ muted_users = {}
 
 def is_spam(client):
     current_time = time.time();
-    spam_timer = 1
+    spam_timer = 3
     cooldown = 10
 
     #check if user is in already cooldown
@@ -61,9 +61,16 @@ def is_spam(client):
     last_message_time[client] = current_time;
     return False,0;
 
-
 def show_stats():
-    server_stats["active_users"] = len(clients);
+    stats = f"[SYSTEM REPORT] Active Users: {len(clients)} | Total Messages: {server_stats['total_messages']} | Total PMs: {server_stats['total_pms']}";
+    logging.info(stats);
+
+#for showing stats every other minute
+def show_stats_period():
+    while True:
+        time.sleep(120);
+        show_stats();
+
 
 
 ##function to receive connections
@@ -95,6 +102,8 @@ def receive(server):
             #append to server list
             clients.append(client);
             usernames.append(username);
+
+            server_stats["active_users"] = len(clients);
 
             if username in delayed_messages:
                 pending_message = delayed_messages[username];
@@ -141,10 +150,16 @@ def handle(client):
                 
             #find out if it is a broadcast or private message
             if message.startswith("/pm"):
+                server_stats["total_pms"] += 1;
                 send_pm(client,username,message);
+            #show stats with /stats command on demand
+            elif message.strip() == "/stats":
+                show_stats();
+                client.send(f"[SYSTEM REPORT] Active Users: {len(clients)} | Total Messages: {server_stats['total_messages']} | Total PMs: {server_stats['total_pms']}".encode('utf-8'));
             else:
                 #add username to message
                 message_to_broadcast = f"{username}: {message}";
+                server_stats["total_messages"] += 1;
                 broadcast(message_to_broadcast);
 
         except:
@@ -153,6 +168,9 @@ def handle(client):
                 index = clients.index(client);
                 clients.remove(client);
                 client.close();
+
+                server_stats["active_users"] = len(clients);
+
                 username = usernames[index];
                 broadcast(f"{username} has left the chat");
                 usernames.remove(username);
@@ -238,6 +256,8 @@ def tcp_chat_server():
         server.listen();
         logging.info(f"[### CHAT SERVER ###] - Server listening on port {tcp_port}..;.");
 
+        threading.Thread(target=show_stats_period, daemon=True).start();
+        
         receive(server);
 
     except Exception as e:
