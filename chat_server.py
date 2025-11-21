@@ -4,6 +4,8 @@ import logging
 import random
 import time
 from datetime import datetime
+import asyncio
+import websockets 
 
 
 #logging config
@@ -18,6 +20,7 @@ logging.basicConfig(
 
 host = "0.0.0.0";
 tcp_port = 56458;
+web_port = 8080;
 
 #for storing clients address and usernames
 clients = [];
@@ -36,10 +39,14 @@ server_stats = {
 last_message_time = {};
 muted_users = {}
 
+#websockets vars
+ws_clients = set()
+ws_loop = None
+
 def is_spam(client):
     current_time = time.time();
-    spam_timer = 0.1
-    cooldown = 5
+    spam_timer = 0.5
+    cooldown = 10
 
     #check if user is in already cooldown
     if client in muted_users:
@@ -64,6 +71,7 @@ def is_spam(client):
 def show_stats():
     stats = f"[SYSTEM REPORT] Active Users: {len(clients)} | Total Messages: {server_stats['total_messages']} | Total PMs: {server_stats['total_pms']}";
     logging.info(stats);
+    push_to_web(stats);
 
 #for showing stats every other minute
 def show_stats_period():
@@ -71,14 +79,14 @@ def show_stats_period():
         time.sleep(120);
         show_stats();
 
-
-
 ##function to receive connections
 def receive(server):
     while True:
         try:
             client, address = server.accept();
-            logging.info(f"User connected from {address}");
+            msg_conn = f"User connected from {address}";
+            logging.info(msg_conn);
+            push_to_web(msg_conn);
                 
             client.send("USERNAME\n".encode("utf-8"));
             username = client.recv(1024).decode("utf-8", errors="ignore").strip();
@@ -94,7 +102,7 @@ def receive(server):
                 while username in usernames:
                     suffix = random.randint(0,999);
                     username = f"{existing_username}{suffix}";
-                    client.send(f"[### CHAT SERVER ###] - Username is already in use.. Your username has been changed to {username}\n".encode('utf-8'));    
+                client.send(f"[### CHAT SERVER ###] - Username is already in use.. Your username has been changed to {username}\n".encode('utf-8'));    
                 
             if not username:
                 username = f"User_{address[1]}";
@@ -120,7 +128,10 @@ def receive(server):
             print(f"Your username is : {username}")
             broadcast(f"[### CHAT SERVER ###] - {username} has joined the chat");
             client.send("[### CHAT SERVER ###] - Connected to the server\n".encode("utf-8"));
-            logging.info(f"{username} has joined the chat from {address}");
+            
+            msg_join = f"[JOIN]: {username} has joined the chat from {address}";
+            logging.info(msg_join);
+            push_to_web(msg_join);
                 
             #threading
             thread = threading.Thread(target=handle, args=(client,), daemon=True);
@@ -129,7 +140,7 @@ def receive(server):
         except Exception as e:
             logging.error(f"Error accepting connection: {e}");
             continue
-    
+
 ##function to handle client messages
 def handle(client):
     while True:
@@ -178,7 +189,8 @@ def handle(client):
                 usernames.remove(username);
                 broadcast(f"USERS:{','.join(usernames)}");
 
-                logging.info(f"{username} disconnected");
+                logging.info(f"[DISCONNECT]:{username} disconnected");
+                push_to_web(f"[DISCONNECT]: {username} disconnected");
             break
     
 
@@ -200,6 +212,7 @@ def broadcast(message):
     formatted_message = f"[{timestamp}] {message}";
         
     logging.info(f"[BROADCAST]: {formatted_message}");
+    push_to_web(f"[BROADCAST]: {formatted_message}");
 
     for client in clients:
         try:
@@ -245,7 +258,9 @@ def send_pm(sender_client,sender_username,message):
         #to notify the sender
         sender_client.send(f"[{timestamp}] [PM sended to {target_name}]: {private_message}\n".encode('utf-8'))
         #logging
-        logging.info(f"[**PRIVATE MESSAGE**] {sender_username} to {target_name} : {private_message}");
+        msg_pm = f"[**PRIVATE MESSAGE**] {sender_username} to {target_name} : {private_message}";
+        logging.info(msg_pm);
+        push_to_web(msg_pm);
 
     except Exception as e:
         logging.error(f"PM Error: {e}");
@@ -264,15 +279,50 @@ def tcp_chat_server():
         server.bind((host, tcp_port));
         logging.info(f"[### CHAT SERVER ###] - Server is bound to port {tcp_port}");
         server.listen();
-        logging.info(f"[### CHAT SERVER ###] - Server listening on port {tcp_port}..;.");
+        logging.info(f"[### CHAT SERVER ###] - Server listening on port {tcp_port}...");
 
         threading.Thread(target=show_stats_period, daemon=True).start();
+
+        #start websocket thread
+        threading.Thread(target=start_ws_server, daemon=True).start();
         
         receive(server);
 
     except Exception as e:
         logging.error(f"[### CHAT SERVER ###] - Failed to start server: {e}");
         return
+
+
+##websocket part##
+async def ws_handler(websocket):
+    ws_clients.add(websocket);
+    try:
+        await websocket.wait_closed();
+    finally:
+        ws_clients.remove(websocket);
+
+async def broadcast_ws_async(msg):
+    if ws_clients:
+        to_remove = set();
+        for ws in ws_clients:
+            try:
+                await ws.send(msg);
+            except:
+                to_remove.add(ws);
+        for ws in to_remove:
+            ws_clients.remove(ws);
+
+def push_to_web(message):
+    if ws_loop:
+        asyncio.run_coroutine_threadsafe(broadcast_ws_async(message), ws_loop);
+
+def start_ws_server():
+    global ws_loop;
+    ws_loop = asyncio.new_event_loop();
+    asyncio.set_event_loop(ws_loop);
+    start_server = websockets.serve(ws_handler, host, web_port);
+    ws_loop.run_until_complete(start_server);
+    ws_loop.run_forever();        
     
 
 if __name__ == "__main__":  
