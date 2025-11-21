@@ -35,13 +35,13 @@ class ProjectLauncher:
                                width=30, height=2, cursor="hand2")
         btn_server.pack(pady=5)
 
-        
+        '''
         btn_relay = tk.Button(self.root, text="Start Relay Server (56459)", 
                                command=self.run_relay, 
                                bg=BTN_COLOR_RELAY, fg="white", font=("Arial", 10), 
                                width=30, height=1, cursor="hand2")
         btn_relay.pack(pady=5)
-
+        '''
         
         btn_web_log = tk.Button(self.root, text=f"View Web Logs (HTTP:{HTTP_PORT})", 
                                command=self.view_web_logs, 
@@ -87,8 +87,8 @@ class ProjectLauncher:
         self.run_process("chat_relay.py");
 
     def view_web_logs(self):
-        webbrowser.open_new_tab(f"http://localhost:{HTTP_PORT}");
-        messagebox.showinfo("Browser Launch", f"Attempting to open http://localhost:{HTTP_PORT}\n(Server must be running the HTTP feature)");
+        file_path = os.path.abspath("index.html")
+        webbrowser.open_new_tab(f"file://{file_path}")
 
     def run_gui_client(self):
         self.run_process("chat_client_gui.py");
