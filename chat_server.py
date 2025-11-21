@@ -38,8 +38,8 @@ muted_users = {}
 
 def is_spam(client):
     current_time = time.time();
-    spam_timer = 3
-    cooldown = 10
+    spam_timer = 0.1
+    cooldown = 5
 
     #check if user is in already cooldown
     if client in muted_users:
@@ -80,12 +80,12 @@ def receive(server):
             client, address = server.accept();
             logging.info(f"User connected from {address}");
                 
-            client.send("USERNAME".encode("utf-8"));
+            client.send("USERNAME\n".encode("utf-8"));
             username = client.recv(1024).decode("utf-8", errors="ignore").strip();
                 
             ##username rules
             if username.startswith('*'):
-                client.send("[### CHAT SERVER ###] - Invalid username! Username cannot start with *".encode('utf-8'));
+                client.send("[### CHAT SERVER ###] - Invalid username! Username cannot start with *\n".encode('utf-8'));
                 client.close();
                 continue
 
@@ -94,7 +94,7 @@ def receive(server):
                 while username in usernames:
                     suffix = random.randint(0,999);
                     username = f"{existing_username}{suffix}";
-                client.send(f"[### CHAT SERVER ###] - Username is already in use.. Your username has been changed to {username}".encode('utf-8'));    
+                    client.send(f"[### CHAT SERVER ###] - Username is already in use.. Your username has been changed to {username}\n".encode('utf-8'));    
                 
             if not username:
                 username = f"User_{address[1]}";
@@ -103,21 +103,23 @@ def receive(server):
             clients.append(client);
             usernames.append(username);
 
+            broadcast(f"USERS:{','.join(usernames)}");
+
             server_stats["active_users"] = len(clients);
 
             if username in delayed_messages:
                 pending_message = delayed_messages[username];
-                client.send(f"There are {len(pending_message)} messages for you".encode('utf-8'));
+                client.send(f"There are {len(pending_message)} messages for you\n".encode('utf-8'));
 
                 for message in pending_message:
-                    client.send(message.encode('utf-8'));
+                    client.send((message + "\n").encode('utf-8'));
 
                 del delayed_messages[username];    
 
                 
             print(f"Your username is : {username}")
             broadcast(f"[### CHAT SERVER ###] - {username} has joined the chat");
-            client.send("[### CHAT SERVER ###] - Connected to the server".encode("utf-8"));
+            client.send("[### CHAT SERVER ###] - Connected to the server\n".encode("utf-8"));
             logging.info(f"{username} has joined the chat from {address}");
                 
             #threading
@@ -126,7 +128,7 @@ def receive(server):
             thread.start();
         except Exception as e:
             logging.error(f"Error accepting connection: {e}");
-            break
+            continue
     
 ##function to handle client messages
 def handle(client):
@@ -141,7 +143,7 @@ def handle(client):
             spam,cooldown = is_spam(client);
 
             if spam:
-                client.send(f"SPAM DETECTED ! You are muted for {cooldown} seconds...".encode('utf-8'));
+                client.send(f"SPAM DETECTED ! You are muted for {cooldown} seconds...\n".encode('utf-8'));
                 continue;
     
             #find username of the sender
@@ -155,7 +157,7 @@ def handle(client):
             #show stats with /stats command on demand
             elif message.strip() == "/stats":
                 show_stats();
-                client.send(f"[SYSTEM REPORT] Active Users: {len(clients)} | Total Messages: {server_stats['total_messages']} | Total PMs: {server_stats['total_pms']}".encode('utf-8'));
+                client.send(f"[SYSTEM REPORT] Active Users: {len(clients)} | Total Messages: {server_stats['total_messages']} | Total PMs: {server_stats['total_pms']}\n".encode('utf-8'));
             else:
                 #add username to message
                 message_to_broadcast = f"{username}: {message}";
@@ -174,12 +176,20 @@ def handle(client):
                 username = usernames[index];
                 broadcast(f"{username} has left the chat");
                 usernames.remove(username);
+                broadcast(f"USERS:{','.join(usernames)}");
+
                 logging.info(f"{username} disconnected");
             break
     
 
 ##function to broadcast messages to all clients
 def broadcast(message):
+    #for sending users without timestamps
+    if str(message).startswith("USERS:"):
+        for client in clients: 
+            try: client.send((message + "\n").encode('utf-8'));
+            except: pass
+        return
     #add timestamps
     timestamp = datetime.now().strftime('%H:%M:%S');
         
@@ -193,7 +203,7 @@ def broadcast(message):
 
     for client in clients:
         try:
-          client.send(formatted_message.encode('utf-8'));
+          client.send((formatted_message + "\n").encode('utf-8'));
         except Exception as e:
             logging.error(f"Error broadcasting to client: {e}");
 
@@ -205,7 +215,7 @@ def send_pm(sender_client,sender_username,message):
         components = message.split(" ",2);
 
         if len(components) < 3:
-            sender_client.send("[### CHAT SERVER ###] - Invalid /pm command use this format: /pm <username> <message>".encode('utf-8'));
+            sender_client.send("[### CHAT SERVER ###] - Invalid /pm command use this format: /pm <username> <message>\n".encode('utf-8'));
             return
 
         target_name = components[1];
@@ -213,8 +223,8 @@ def send_pm(sender_client,sender_username,message):
 
         #for saving messages for offline users
         if target_name not in usernames:
-            sender_client.send(f"[### CHAT SERVER ###] - User {target_name} is not found".encode('utf-8'));
-            sender_client.send("Saving your message to database to send when user is online".encode('utf-8'));
+            sender_client.send(f"[### CHAT SERVER ###] - User {target_name} is not found\n".encode('utf-8'));
+            sender_client.send("Saving your message to database to send when user is online\n".encode('utf-8'));
             timestamp = datetime.now().strftime('%H:%M:%S');
             saved_message = f"[{timestamp}] [DELAYED MESSAGE] {sender_username}: {private_message}";
 
@@ -231,15 +241,15 @@ def send_pm(sender_client,sender_username,message):
         target_client = clients[target_index];
 
         #send pm
-        target_client.send(f"[{timestamp}] [*PRIVATE*] {sender_username}: {private_message}".encode('utf-8'));
+        target_client.send(f"[{timestamp}] [*PRIVATE*] {sender_username}: {private_message}\n".encode('utf-8'));
         #to notify the sender
-        sender_client.send(f"[{timestamp}] [PM sended to {target_name}]: {private_message}".encode('utf-8'))
+        sender_client.send(f"[{timestamp}] [PM sended to {target_name}]: {private_message}\n".encode('utf-8'))
         #logging
         logging.info(f"[**PRIVATE MESSAGE**] {sender_username} to {target_name} : {private_message}");
 
     except Exception as e:
         logging.error(f"PM Error: {e}");
-        sender_client.send("[### CHAT SERVER ###] - Error sending private message.".encode('utf-8'));
+        sender_client.send("[### CHAT SERVER ###] - Error sending private message!\n".encode('utf-8'));
 
 
 ##TCP chat server##

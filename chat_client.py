@@ -31,13 +31,20 @@ def chat_client(host=HOST, port=PORT):
     def receive_msg():
         while True:
             try:
-                message = client.recv(1024).decode('utf-8', errors='ignore');
-                if message == "USERNAME":
-                    client.send(username.encode('utf-8'));
-                elif message:
-                    print(message);
-                else:
+                data = client.recv(1024).decode('utf-8', errors='ignore');
+                if not data:
                     raise Exception("Server closed connection");
+                
+                messages = data.split('\n')
+                for message in messages:
+                    if not message:
+                        continue
+
+                    if message == "USERNAME":
+                        client.send(username.encode('utf-8'));
+                    else:
+                        print(message);
+
             except Exception as e:
                 print(f"\nDisconnected from server: {e}");
                 client.close();
