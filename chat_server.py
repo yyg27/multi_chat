@@ -320,9 +320,11 @@ def start_ws_server():
     global ws_loop;
     ws_loop = asyncio.new_event_loop();
     asyncio.set_event_loop(ws_loop);
-    start_server = websockets.serve(ws_handler, host, web_port);
-    ws_loop.run_until_complete(start_server);
-    ws_loop.run_forever();        
+    async def main_runner():
+        async with websockets.serve(ws_handler, host, web_port):
+            await asyncio.Future();
+
+    ws_loop.run_until_complete(main_runner()) ;    
     
 
 if __name__ == "__main__":  
