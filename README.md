@@ -16,7 +16,7 @@ This project is a multi-threaded chat application built with Python. It features
 -   **Web Monitor (WebSocket):** Admins can view live server logs and statistics via a web interface in real-time.
     
 -   **GUI Client:** A graphical interface built with Tkinter.
--  **CLI Client:** For 
+-  **CLI Client:** For when you want to feel like Neo from The Matrix
     
 
 ## Prerequisites
